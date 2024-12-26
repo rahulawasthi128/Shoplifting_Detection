@@ -2,15 +2,20 @@
 <html lang="en">
 <head>
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shoplifting Detection</title>
 </head>
 <body>
-    <h1>Shoplifting Detection</h1>
-    <form action="/upload" method="post" enctype="multipart/form-data">
-        <label for="video">Upload a video:</label>
-        <input type="file" id="video" name="video" accept="video/*" required>
-        <br><br>
-        <button type="submit">Submit</button>
-    </form>
+    <div class="container">
+        <h1>Shoplifting Detection System</h1>
+        <p>Upload a video to detect shoplifting activities</p>
+        <form action="/upload" method="post" enctype="multipart/form-data" class="upload-form">
+            <label for="video">Select Video</label>
+            <input type="file" id="video" name="video" accept="video/*" required>
+            <br><br>
+            <button type="submit">Start Detection</button>
+        </form>
+    </div>
 </body>
 </html>
