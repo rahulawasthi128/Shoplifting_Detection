@@ -11,7 +11,7 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads/'
 RESULTS_FOLDER = 'results/'
 FRAMES_FOLDER = 'frames/'
-MODEL_PATH = 'models/detection_model.pt'
+MODEL_PATH = 'models/yolov5s.pt'
 
 # Ensure directories exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -19,8 +19,8 @@ os.makedirs(RESULTS_FOLDER, exist_ok=True)
 os.makedirs(FRAMES_FOLDER, exist_ok=True)
 
 # Load YOLOv5 model
-model = torch.hub.load('ultralytics/yolov5', 'yolov5s')  # Replace with custom model if needed
-
+model = torch.load(MODEL_PATH)
+model.eval()
 def extract_frames(video_path, output_folder):
     """Extract frames from the uploaded video."""
     cap = cv2.VideoCapture(video_path)
