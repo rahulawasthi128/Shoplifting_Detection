@@ -19,7 +19,7 @@ os.makedirs(RESULTS_FOLDER, exist_ok=True)
 os.makedirs(FRAMES_FOLDER, exist_ok=True)
 
 # Load YOLOv5 model
-model = torch.load(MODEL_PATH)
+model = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH, force_reload=False)
 model.eval()
 def extract_frames(video_path, output_folder):
     """Extract frames from the uploaded video."""
