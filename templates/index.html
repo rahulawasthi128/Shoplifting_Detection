@@ -5,17 +5,172 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shoplifting Detection</title>
+    <style>
+        .drop-zone {
+            border: 2px dashed #ccc;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            margin: 20px 0;
+            transition: border-color 0.3s, background-color 0.3s;
+        }
+        .drop-zone.dragover {
+            border-color: #007bff;
+            background-color: #f0f8ff;
+        }
+        .drop-zone.selected {
+            border-color: #28a745;
+            background-color: #e6f4ea;
+        }
+        .drop-zone p {
+            margin: 10px 0;
+        }
+        .upload-form {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+        .loading-spinner {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .result-container {
+            margin-top: 20px;
+            text-align: center;
+            display: none;
+        }
+        .result-video {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
 </head>
 <body>
     <div class="container">
         <h1>Shoplifting Detection System</h1>
         <p>Upload a video to detect shoplifting activities</p>
-        <form action="/upload" method="post" enctype="multipart/form-data" class="upload-form">
-            <label for="video">Select Video</label>
-            <input type="file" id="video" name="video" accept="video/*" required>
-            <br><br>
+        <form action="/upload" method="post" enctype="multipart/form-data" class="upload-form" id="uploadForm">
+            <label for="video">
+            <div class="drop-zone" id="dropZone">
+                <p id="fileName">Drag and drop your video here</p>
+                <p>or</p>
+                Select Video
+                <input type="file" id="video" name="video" accept="video/*" required>
+            </div>
+        </label>
             <button type="submit">Start Detection</button>
         </form>
+        <div class="result-container" id="resultContainer">
+            <h2>Processed Video</h2>
+            <video class="result-video" id="resultVideo" controls></video>
+            <p><a href="#" id="downloadLink" class="download-btn">Download Processed Video</a></p>
+        </div>
     </div>
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner"></div>
+    </div>
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const videoInput = document.getElementById('video');
+        const form = document.getElementById('uploadForm');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const resultContainer = document.getElementById('resultContainer');
+        const resultVideo = document.getElementById('resultVideo');
+        const downloadLink = document.getElementById('downloadLink');
+        const fileNameDisplay = document.getElementById('fileName');
+
+        // Drag and drop handlers
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.add('dragover');
+                dropZone.classList.remove('selected');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => {
+                dropZone.classList.remove('dragover');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type.startsWith('video/')) {
+                videoInput.files = files;
+                fileNameDisplay.textContent = `Selected: ${files[0].name}`;
+                dropZone.classList.add('selected');
+            } else {
+                alert('Please drop a valid video file!');
+            }
+        }, false);
+
+        videoInput.addEventListener('change', () => {
+            if (videoInput.files.length > 0) {
+                fileNameDisplay.textContent = `Selected: ${videoInput.files[0].name}`;
+                dropZone.classList.add('selected');
+            } else {
+                dropZone.classList.remove('selected');
+            }
+        });
+
+        // Reset drop zone style after form submission
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            loadingOverlay.style.display = 'flex';
+            dropZone.classList.remove('selected');
+            fileNameDisplay.textContent = 'Drag and drop your video here';
+            const formData = new FormData(form);
+            
+            fetch('/upload', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                loadingOverlay.style.display = 'none';
+                if (data.success) {
+                    resultVideo.src = `/results/${data.filename}`;
+                    downloadLink.href = `/results/${data.filename}`;
+                    resultContainer.style.display = 'block';
+                    resultVideo.scrollIntoView({ behavior: 'smooth' });
+                } else {
+                    alert('Error processing video: ' + data.message);
+                }
+            })
+            .catch(error => {
+                loadingOverlay.style.display = 'none';
+                alert('An error occurred: ' + error.message);
+            });
+        });
+    </script>
 </body>
 </html>

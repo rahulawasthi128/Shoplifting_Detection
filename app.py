@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, send_from_directory
+from flask import Flask, request, render_template, send_from_directory, jsonify
 import os
 import cv2
 import torch
@@ -11,7 +11,7 @@ app = Flask(__name__)
 UPLOAD_FOLDER = 'uploads/'
 RESULTS_FOLDER = 'results/'
 FRAMES_FOLDER = 'frames/'
-MODEL_PATH = 'models/yolov5s.pt'
+MODEL_PATH = 'models/detection_model.pt'
 
 # Ensure directories exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -19,8 +19,8 @@ os.makedirs(RESULTS_FOLDER, exist_ok=True)
 os.makedirs(FRAMES_FOLDER, exist_ok=True)
 
 # Load YOLOv5 model
-model = torch.hub.load('ultralytics/yolov5', 'custom', path=MODEL_PATH, force_reload=False)
-model.eval()
+model = torch.hub.load('ultralytics/yolov5', 'yolov5s')  # Replace with custom model if needed
+
 def extract_frames(video_path, output_folder):
     """Extract frames from the uploaded video."""
     cap = cv2.VideoCapture(video_path)
@@ -51,18 +51,14 @@ def annotate_video(input_video, detections, output_video, shoplifting_percentage
             break
         if frame_idx in detections:
             for (x1, y1, x2, y2, label, thief_likelihood) in detections[frame_idx]:
-                # Check if person is detected as a thief
-                if thief_likelihood > 70:  # Threshold for thief detection
+                if thief_likelihood > 70:
                     color = (0, 0, 255)  # Red for thief
-                    label = f"Thief {thief_likelihood:.2f}%"  # Show thief percentage
+                    label = f"Thief {thief_likelihood:.2f}%"
                 else:
-                    color = (0, 255, 0)  # Green for normal person detection
-                
-                # Draw bounding box with appropriate color
+                    color = (0, 255, 0)  # Green for normal person
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
                 cv2.putText(frame, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-        # Annotate with overall shoplifting likelihood
         cv2.putText(frame, f"Shoplifting Likelihood: {shoplifting_percentage:.2f}%", (20, 50),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         
@@ -73,45 +69,32 @@ def annotate_video(input_video, detections, output_video, shoplifting_percentage
     out.release()
 
 def is_theft_detected(x1, y1, x2, y2, movement_data):
-    """Function to detect theft behavior (e.g., carrying large object or near an exit)."""
+    """Function to detect theft behavior."""
     object_width = x2 - x1
     object_height = y2 - y1
-    
-    # Placeholder logic: If bounding box is large, assume theft (carrying an object)
-    if object_width > 100 and object_height > 100:  # Adjust these thresholds as needed
-        return True  # Suspected theft
-
-    # Dynamic analysis: check if a person is moving too fast or near exits
-    speed_factor = movement_data.get('speed', 0)  # Assume speed factor is calculated
-    if speed_factor > 1.5:  # High speed might indicate suspicious movement
-        return True  # Speed suggests theft behavior
-
+    if object_width > 100 and object_height > 100:
+        return True
+    speed_factor = movement_data.get('speed', 0)
+    if speed_factor > 1.5:
+        return True
     return False
 
 def calculate_thief_likelihood(x1, y1, x2, y2, previous_position=None, current_position=None):
-    """Calculate the likelihood of being a thief based on dynamic factors."""
+    """Calculate the likelihood of being a thief."""
     width = x2 - x1
     height = y2 - y1
-
-    # Example instinctive factor 1: larger bounding boxes (suspect larger objects are being carried)
-    size_factor = (width * height) / 10000  # Normalize size factor (adjust denominator as needed)
-
-    # Dynamic movement: if a person is moving quickly, it can increase thief likelihood
+    size_factor = (width * height) / 10000
     movement_factor = 0
     if previous_position and current_position:
         distance_moved = np.sqrt((current_position[0] - previous_position[0])**2 +
-                                 (current_position[1] - previous_position[1])**2)
-        movement_factor = distance_moved / 5.0  # Adjust divisor for movement scaling
-
-    # Combined instinctive likelihood
-    thief_likelihood = (size_factor * 100 + movement_factor * 100) / 2  # Average of size and movement factors
-    thief_likelihood = min(thief_likelihood, 100)  # Cap at 100%
-
-    # Return the likelihood only if it's above 70%
-    return thief_likelihood if thief_likelihood > 70 else 0  # Only return likelihood if > 70%
+                               (current_position[1] - previous_position[1])**2)
+        movement_factor = distance_moved / 5.0
+    thief_likelihood = (size_factor * 100 + movement_factor * 100) / 2
+    thief_likelihood = min(thief_likelihood, 100)
+    return thief_likelihood if thief_likelihood > 70 else 0
 
 def detect_objects_in_frames(frames_folder):
-    """Run object detection on all frames and track suspicious behavior."""
+    """Run object detection on all frames."""
     detections = {}
     suspicious_frames = 0
     total_frames = 0
@@ -136,14 +119,12 @@ def detect_objects_in_frames(frames_folder):
 
             detections[frame_idx].append((x1, y1, x2, y2, label, thief_likelihood))
 
-            # Track suspicious behavior (e.g., person near exit, carrying large items)
-            if label == 'person' and thief_likelihood > 0:  # Only count if thief likelihood > 0
+            if label == 'person' and thief_likelihood > 0:
                 suspicious_frames += 1
-            previous_positions[frame_idx] = {label: (x1, y1)}  # Store current position
+            previous_positions[frame_idx] = {label: (x1, y1)}
 
         total_frames += 1
 
-    # Calculate percentage of suspicious frames
     shoplifting_percentage = (suspicious_frames / total_frames) * 100 if total_frames > 0 else 0
     return detections, shoplifting_percentage
 
@@ -156,23 +137,35 @@ def home():
 def upload_video():
     """Handle video upload and processing."""
     if 'video' not in request.files:
-        return "No video file uploaded", 400
+        return jsonify({'success': False, 'message': 'No video file uploaded'}), 400
 
     video = request.files['video']
-    video_path = os.path.join(UPLOAD_FOLDER, video.filename)
+    video_filename = video.filename
+    video_path = os.path.join(UPLOAD_FOLDER, video_filename)
     video.save(video_path)
 
-    # Extract frames
-    frame_count = extract_frames(video_path, FRAMES_FOLDER)
+    try:
+        # Extract frames
+        frame_count = extract_frames(video_path, FRAMES_FOLDER)
 
-    # Detect objects in frames and calculate shoplifting percentage
-    detections, shoplifting_percentage = detect_objects_in_frames(FRAMES_FOLDER)
+        # Detect objects and calculate shoplifting percentage
+        detections, shoplifting_percentage = detect_objects_in_frames(FRAMES_FOLDER)
 
-    # Annotate video with detections and shoplifting percentage
-    output_video_path = os.path.join(RESULTS_FOLDER, f"annotated_{video.filename}")
-    annotate_video(video_path, detections, output_video_path, shoplifting_percentage)
+        # Annotate video
+        output_filename = f"annotated_{video_filename}"
+        output_video_path = os.path.join(RESULTS_FOLDER, output_filename)
+        annotate_video(video_path, detections, output_video_path, shoplifting_percentage)
 
-    return f"Video processed successfully! <a href='/results/{os.path.basename(output_video_path)}'>Download Results</a>"
+        return jsonify({
+            'success': True,
+            'filename': output_filename,
+            'message': 'Video processed successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'Error processing video: {str(e)}'
+        }), 500
 
 @app.route('/results/<filename>')
 def download_results(filename):
